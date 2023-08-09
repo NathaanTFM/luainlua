@@ -1,34 +1,16 @@
-if not pcall(require, "_bios") then argv = {...} end
+local loadstring = require("loadstring")
 
-local utils = require("utils")
-local print = utils.print
-local dump = utils.dump
+local og_eventChatCommand = eventChatCommand
 
-local LuaLexer = require("lexer")
-local LuaParser = require("parser")
-local create_function = require("compiler")
-
-if io.open ~= nil then
-    local file = nil
-    if file == nil and argv[1] ~= nil then
-        file = io.open(argv[1], "r")
+function eventChatCommand(name, command)
+    if command:sub(1, 5) == "eval " then
+        local script = command:sub(6)
+        local status, func = pcall(loadstring, script)
+        if status then
+            pcall(func)
+        end
+        
+    elseif og_eventChatCommand ~= nil then
+        return og_eventChatCommand(name, command)
     end
-    if file == nil then
-        file = io.open("input.lua", "r")
-    end
-    if file == nil then
-        file = io.open("../input.lua", "r")
-    end
-
-    GlobalScript = file:read("*all")
-    file:close()
 end
-
-local script = GlobalScript
-
-local parser = LuaParser(script)
-
-local func = create_function(parser.body)
-
-table.remove(_G.arg, 1)
-func()
