@@ -46,6 +46,12 @@ local function new(cls, script)
     -- history
     local history = {}
     
+    local function lex_error(str)
+        local row, col = self.get_row_col()
+        print("\nCurrent: " .. self.dump())
+        error("lex error at line " .. row ..": " .. str, 0)
+    end
+    
     -- skips to the next character
     local function skip(count)
         if count == nil then
@@ -87,7 +93,7 @@ local function new(cls, script)
                         -- definitely a long comment
                         target = string.find(script, "%]" .. equals .. "%]", position)
                         if target == nil then
-                            error("long comment not closed")
+                            lex_error("long comment not closed")
                         end
                         setpos(target+#equals+2)
                         
@@ -127,7 +133,7 @@ local function new(cls, script)
     local function read_string_escape()
         -- error if invalid
         if current ~= "\\" then
-            error("invalid string escape")
+            lex_error("invalid string escape")
         end
         skip(1)
         
@@ -136,7 +142,7 @@ local function new(cls, script)
         if integer ~= nil then
             local value = tonumber(integer)
             if value > 255 then
-                error("escape sequence too large")
+                lex_error("escape sequence too large")
             end
             skip(#integer)
             return string.char(value)
@@ -144,7 +150,7 @@ local function new(cls, script)
         
         local c = current
         if c == "" then
-            error("eof while parsing string escape")
+            lex_error("eof while parsing string escape")
         end
         skip(1)
         
@@ -183,7 +189,7 @@ local function new(cls, script)
         
         while true do
             if current == "" then
-                error("eof while reading string")
+                lex_error("eof while reading string")
                 
             elseif current == "]" then
                 if peek(#closing) == closing then
@@ -224,10 +230,10 @@ local function new(cls, script)
                 break
                 
             elseif current == "" then
-                error("eof while reading string")
+                lex_error("eof while reading string")
                 
             elseif current == "\n" then
-                error("unexpected newline in string")
+                lex_error("unexpected newline in string")
                 
             else
                 -- any character
@@ -338,8 +344,7 @@ local function new(cls, script)
             return
         end
         
-        dump(peek(10))
-        error("cannot parse")
+        lex_error("unexpected \"" .. peek(1) .. "\"")
     end
     
     self.dump = function()
@@ -355,6 +360,8 @@ local function new(cls, script)
             return "number " .. dump(self.number) .. ""
         elseif self.token ~= nil then
             return "token " .. dump(self.token) .. ""
+        else
+            return "unknown"
         end
     end
     
@@ -378,7 +385,7 @@ local function new(cls, script)
     
     self.restore = function()
         if history[1] == nil then
-            error("cannot restore")
+            lex_error("cannot restore")
         end
         setpos(history[1])
         history = {}
