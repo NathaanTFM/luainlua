@@ -1,4 +1,5 @@
 import os
+import subprocess
 
 with open("src/_bios.lua", "r") as f:
     bios = f.read()
@@ -23,3 +24,11 @@ bios = bios.replace(mark, mark + "\n" + modules)
 
 with open("output.lua", "w") as f:
     f.write(bios)
+    
+try:
+    minified = subprocess.check_output(["luamin", "-f", "output.lua"], shell=True)
+except Exception as e:
+    print("cannot minify", e)
+else:
+    with open("output.lua", "wb") as f:
+        f.write(minified)
