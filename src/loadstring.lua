@@ -1,5 +1,5 @@
 local LuaParser = require("parser")
-local create_function = require("compiler")
+local create_function = require("interpreter")
 
 return function(script)
     local parser = LuaParser(script)
