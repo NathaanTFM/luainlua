@@ -1,5 +1,8 @@
 do
-    -- util for minifiers
+    -- modules are in this environment
+    local require -- defined later
+    
+    -- better minification output?
     local getmetatable = _G.getmetatable
     local table = _G.table
     local pairs = _G.pairs
@@ -10,8 +13,8 @@ do
     local select = _G.select
     local tostring = _G.tostring
     local next = _G.next
-    
-    -- we don't want to interfere with global, so let's call those pack and unpack
+
+    -- custom pack and unpack functions
     local function pack(...)
         return {n = select('#', ...); ...}
     end
@@ -23,26 +26,25 @@ do
         if j == nil then j = #tbl end -- if tbl.n is nil
         return _unpack(tbl, i, j)
     end
-
-    local require
-    local modules = {}
-    local loaded = {}
     
-    -- XXX INSERT MODULES HERE
-    
-    require = function(name, ...)
-        if loaded[name] ~= nil then
-            return unpack(loaded[name])
-            
-        elseif modules[name] ~= nil then
-            loaded[name] = pack(modules[name](...))
-            modules[name] = nil
-            return unpack(loaded[name])
-            
-        else
-            error("module '" .. name .. "' not found")
+    -- define require, pass modules as a parameter
+    require = (function(modules)
+        local loaded = {}
+        
+        return function(name, ...)
+            if loaded[name] ~= nil then
+                return unpack(loaded[name])
+                
+            elseif modules[name] ~= nil then
+                loaded[name] = pack(modules[name](...))
+                modules[name] = nil
+                return unpack(loaded[name])
+                
+            else
+                error("module '" .. name .. "' not found")
+            end
         end
-    end
+    end)(--[[ XXX modules here ]]--)
 
     require("main")
 end

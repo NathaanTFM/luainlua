@@ -5,23 +5,24 @@ import sys
 with open("src/_bios.lua", "r") as f:
     bios = f.read()
 
-mark = "-- XXX INSERT MODULES HERE"
+mark = "--[[ XXX modules here ]]--"
 
-modules = ""
+modules = []
 
 for file in os.listdir("src"):
     if not file.startswith("_") and file.endswith(".lua"):
         path = "src/" + file
         name = file[:-4]
         
-        modules += "modules[" + repr(name) + "] = (function(...)\n"
+        module = "[" + repr(name) + "] = (function(...)\n"
         
         with open(path, "r") as f:
-            modules += f.read() + "\n"
+            module += f.read() + "\n"
             
-        modules += "end)\n"
+        module += "end)"
+        modules.append(module)
         
-bios = bios.replace(mark, mark + "\n" + modules)
+bios = bios.replace(mark, mark + "\n{" + ", ".join(modules) + "}")
 
 with open("output.lua", "w") as f:
     f.write(bios)
