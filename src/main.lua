@@ -1,4 +1,7 @@
 local loadstring = require("loadstring")
+local env = _G or _ENV
+
+env.loadstring = loadstring
 
 local og_eventChatCommand = eventChatCommand
 
