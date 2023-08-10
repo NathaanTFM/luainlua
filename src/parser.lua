@@ -175,7 +175,7 @@ local function new(cls, script, chunkname)
         while not is_block_end() do
             local stmt = parse_stmt()
             if stmt == nil then
-                parse_error("cannot read stmt")
+                parse_error("unexpected " .. lexer.dump())
             end
             table.insert(body, stmt)
         end
@@ -641,8 +641,6 @@ local function new(cls, script, chunkname)
     end
         
     parse_stmt = function()
-        while lexer.token == ";" do lexer.next() end
-        
         -- XXX VERY SLOW
         local row, col = lexer.get_row_col()
         
@@ -657,18 +655,21 @@ local function new(cls, script, chunkname)
             or parse_repeat()
             or parse_assign_or_call()
         )
-        if not ret then
-            error("** parse_stmt failed: " .. lexer.dump())
+        if ret then
+            ret._chunk = chunkname
+            ret._row = row
+            ret._col = col
+            
+            while lexer.token == ";" do lexer.next() end
         end
-        
-        ret._chunk = chunkname
-        ret._row = row
-        ret._col = col
         
         return ret
     end
     
     self.body = {}
+    
+    -- remove starting semicolons
+    while lexer.token == ";" do lexer.next() end
     
     while not lexer.eof do
         local stmt = parse_stmt()
