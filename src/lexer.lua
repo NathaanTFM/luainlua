@@ -178,7 +178,8 @@ local function new(cls, script, chunkname)
     end
     
     local function read_long_string()
-        local equals = string.match(script, "^%[(=+)%[", position)
+        local equals = string.match(script, "^%[(=*)%[", position)
+
         if equals == nil then
             return nil
         end
