@@ -33,7 +33,11 @@ metatable.__tostring = function()
 end
 
 -- instance creator
-local function new(cls, script)
+local function new(cls, script, chunkname)
+    if type(chunkname) ~= "string" then
+        chunkname = "[string]"
+    end
+    
     local self = {}
     setmetatable(self, metatable)
     
@@ -48,8 +52,8 @@ local function new(cls, script)
     
     local function lex_error(str)
         local row, col = self.get_row_col()
-        print("\nCurrent: " .. self.dump())
-        error("lex error at line " .. row ..": " .. str, 0)
+        print("Current: " .. self.dump())
+        error(chunkname .. ":" .. row ..": " .. str, 0)
     end
     
     -- skips to the next character
@@ -369,7 +373,7 @@ local function new(cls, script)
     local cached_col = 1
     local cached_pos = 1
     
-    -- XXX very slow
+    -- XXX very slow. todo: column
     self.get_row_col = function()
         while cached_pos < position do
             local target = string.find(script, "\n", cached_pos, true)

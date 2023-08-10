@@ -16,16 +16,20 @@ metatable.__tostring = function()
     return "LuaParser: " .. get_identifier(elt)
 end
 
-local function new(cls, script)
+local function new(cls, script, chunkname)
+    if type(chunkname) ~= "string" then
+        chunkname = "[string]"
+    end
+    
     local self = {}
     setmetatable(self, metatable)
     
-    local lexer = LuaLexer(script)
+    local lexer = LuaLexer(script, chunkname)
     
     local function parse_error(str)
         local row, col = lexer.get_row_col()
-        print("\nCurrent: " .. lexer.dump())
-        error("parse error at line " .. row ..": " .. str, 0)
+        print("Current: " .. lexer.dump())
+        error(chunkname .. ":" .. row ..": " .. str, 0)
     end
     
     -- binary operators and their [left, right] priority
@@ -654,11 +658,12 @@ local function new(cls, script)
             or parse_assign_or_call()
         )
         if not ret then
-            print("** parse_stmt failed: " .. lexer.dump())
-        else
-            ret._row = row
-            ret._col = col
+            error("** parse_stmt failed: " .. lexer.dump())
         end
+        
+        ret._chunk = chunkname
+        ret._row = row
+        ret._col = col
         
         return ret
     end

@@ -110,7 +110,7 @@ end]]--
 
 -- custom print function that tostrings everything
 local function print(...)
-    local args = table.pack(...)
+    local args = pack(...)
     local message = ""
     for i = 1, args.n do
         if i ~= 1 then

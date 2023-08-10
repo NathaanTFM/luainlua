@@ -10,28 +10,19 @@ do
     local select = _G.select
     local tostring = _G.tostring
     local next = _G.next
-
-    -- add table.pack if missing
-    if table.pack == nil then
-        -- https://github.com/lunarmodules/Penlight/blob/master/lua/pl/compat.lua
-        function table.pack(...)
-            return {n = select('#', ...); ...}
-        end
+    
+    -- we don't want to interfere with global, so let's call those pack and unpack
+    local function pack(...)
+        return {n = select('#', ...); ...}
     end
 
-    -- add table.unpack if missing
-    if table.unpack == nil then
-        function table.unpack(...)
-            local args = table.pack(...)
-            if args.n ~= 1 then
-                print("args.n", args.n)
-                error("extra args on table.unpack")
-            end
-            return unpack(args[1], 1, args[1].n)
-        end
+    local _unpack = unpack or table.unpack    
+    local function unpack(tbl, i, j)
+        if i == nil then i = 1 end
+        if j == nil then j = tbl.n end
+        if j == nil then j = #tbl end -- if tbl.n is nil
+        return _unpack(tbl, i, j)
     end
-
-    local argv = table.pack(...)
 
     local require
     local modules = {}

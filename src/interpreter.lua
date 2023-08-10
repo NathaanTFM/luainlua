@@ -12,21 +12,77 @@ local function dump_expr(expr)
     return gen.buffer
 end
 
+local function dump_stmt(stmt)
+    gen.buffer = ""
+    gen.add_statement(stmt)
+    return gen.buffer
+end
+
 local create_function_internal
 
-local function create_instance(body, params, initblocks)
+local function create_instance(body, params, initblocks, globals, debugging)
     -- blocks
-    local blocks = {table.unpack(initblocks)}
+    local blocks = {unpack(initblocks)}
     
-    local varargs = {value = nil}
+    local varargs = nil
     
     local evaluate_expr, evaluate_stmt
-    local debug_cur_stmt
     
-    local function on_error(message)
-        error("error on line " .. debug_cur_stmt._row .. ": " .. message)
+    local debuginfo = {
+        stmt = nil
+    }
+    
+    if globals == nil then
+        globals = _ENV or _G
     end
-     
+    
+    local function run_error(msg)
+        error(debuginfo.stmt._chunk .. ":" .. debuginfo.stmt._row .. ": " .. msg, 0)
+    end
+    
+    local function check_type(op, value, types, expr)
+        local typ = type(value)
+        for _, elt in pairs(types) do
+            if elt == typ then
+                return
+            end
+        end
+        local msg = "attempt to " .. op .. " a " .. typ .. " value"
+        if expr ~= nil then
+            msg = msg .. " (" .. dump_expr(expr) .. ")"
+        end
+        run_error(msg)
+    end
+    
+    local function check_arithmetic(left, right, expr_left, expr_right)
+        -- if any meta-method is defined, then we can't just check the type
+        -- and we cannot trust getmetatable, so we're stuck here
+        if getmetatable(left) ~= nil or getmetatable(right) ~= nil then
+            return
+        end 
+    
+        check_type("perform arithmetic on", left, {"number"}, expr_left)
+        check_type("perform arithmetic on", right, {"number"}, expr_right)
+    end
+    
+    local function check_compare(left, right)
+        -- if any meta-method is defined, then we can't just check the type
+        -- and we cannot trust getmetatable, so we're stuck here
+        if getmetatable(left) ~= nil or getmetatable(right) ~= nil then
+            return
+        end 
+        
+        local type_left = type(left)
+        local type_right = type(right)
+        
+        if type_left ~= type_right then
+            run_error("attempt to compare " .. type_left .. " with " .. type_right)
+        
+        elseif type_left ~= "string" and type_left ~= "number" then
+            run_error("attempt to compare two " .. type_left .. " values")
+        end
+    end
+    
     local function debug_locals()
         print()
         print("-- debug_locals --")
@@ -39,7 +95,6 @@ local function create_instance(body, params, initblocks)
             print()
         end
         print()
-        
     end
     
     local function push_block()
@@ -65,6 +120,25 @@ local function create_instance(body, params, initblocks)
         return nil
     end
     
+    local function search_name(name)
+        local loc = search_local(name)
+        if loc ~= nil then
+            return loc.value
+        else
+            return globals[name]
+        end
+    end
+    
+    local function store_name(name, value)
+        local loc = search_local(name)
+        if loc ~= nil then
+            loc.value = value
+        else
+            globals[name] = value
+        end
+    end
+        
+    
     local function add_local(name, value)
         local block = blocks[#blocks]
         block.locals[name] = {value = value}
@@ -78,7 +152,7 @@ local function create_instance(body, params, initblocks)
             for i, value in ipairs(values) do
                 if i == #values then
                     -- multiple elements
-                    local packed = table.pack(evaluate_expr(value))
+                    local packed = pack(evaluate_expr(value))
                     for j = 1, packed.n do
                         tbl[i+j-1] = packed[j]
                     end
@@ -98,8 +172,9 @@ local function create_instance(body, params, initblocks)
     evaluate_expr = function(expr)
         if expr.type == "index" then
             local value = evaluate_expr(expr.value)
-            if value == nil then
-                on_error("attempt to index a nil value (" .. dump_expr(expr.value) .. ")")
+            
+            if debugging and getmetatable(value) == nil then
+                check_type("index", value, {"table"}, expr.value)
             end
             
             if expr.name ~= nil then
@@ -110,19 +185,30 @@ local function create_instance(body, params, initblocks)
             end
             
         elseif expr.type == "name" then            
-            local loc = search_local(expr.name)
-            if loc ~= nil then
-                return loc.value
-            else
-                --print("using global for " .. expr.name)
-                return _G[expr.name]
-            end
+            return search_name(expr.name)
             
         elseif expr.type == "unary" then
             local value = evaluate_expr(expr.value)
-            if expr.uop == "-" then return -value end
-            if expr.uop == "#" then return #value end
-            if expr.uop == "not" then return not value end
+            if expr.uop == "-" then
+                -- is there a metatable field for negation?
+                if debugging and getmetatable(value) == nil then
+                    check_type("perform arithmetic on", value, {"number"}, expr.value)
+                end
+                
+                return -value
+                
+            elseif expr.uop == "#" then
+                if debugging and getmetatable(value) == nil then
+                    check_type("get length of", value, {"string", "table"}, expr.value)
+                end
+                
+                return #value
+                
+            elseif expr.uop == "not" then
+                return not value
+                
+            end
+            
             error("uop: " .. expr.uop)
             
         elseif expr.type == "binary" then
@@ -145,19 +231,59 @@ local function create_instance(body, params, initblocks)
             
             local right = evaluate_expr(expr.right)
             
-            if expr.op == "+" then return left + right end
-            if expr.op == "-" then return left - right end
-            if expr.op == "*" then return left * right end
-            if expr.op == "%" then return left % right end
-            if expr.op == "^" then return left ^ right end
-            if expr.op == "/" then return left / right end
-            if expr.op == ".." then return left .. right end
-            if expr.op == "==" then return left == right end
-            if expr.op == "<" then return left < right end
-            if expr.op == "<=" then return left <= right end
-            if expr.op == "~=" then return left ~= right end
-            if expr.op == ">" then return left > right end
-            if expr.op == ">=" then return left >= right end
+            if expr.op == "+" then
+                if debugging then check_arithmetic(left, right, expr.left, expr.right) end
+                return left + right
+                
+            elseif expr.op == "-" then
+                if debugging then check_arithmetic(left, right, expr.left, expr.right) end
+                return left - right
+                
+            elseif expr.op == "*" then
+                if debugging then check_arithmetic(left, right, expr.left, expr.right) end
+                return left * right
+                
+            elseif expr.op == "%" then
+                if debugging then check_arithmetic(left, right, expr.left, expr.right) end
+                return left % right
+                
+            elseif expr.op == "^" then
+                if debugging then check_arithmetic(left, right, expr.left, expr.right) end
+                return left ^ right
+                
+            elseif expr.op == "/" then
+                if debugging then check_arithmetic(left, right, expr.left, expr.right) end
+                return left / right
+                
+            elseif expr.op == ".." then
+                if debugging and getmetatable(left) == nil and getmetatable(right) == nil then
+                    check_type("concatenate", left, {"string", "number"}, expr.left)
+                    check_type("concatenate", right, {"string", "number"}, expr.right)
+                end
+                return left .. right
+                
+            elseif expr.op == "==" then
+                return left == right
+                
+            elseif expr.op == "<" then
+                if debugging then check_compare(left, right) end
+                return left < right
+                
+            elseif expr.op == "<=" then
+                if debugging then check_compare(left, right) end
+                return left <= right
+                
+            elseif expr.op == "~=" then
+                return left ~= right
+                
+            elseif expr.op == ">" then
+                if debugging then check_compare(left, right) end
+                return left > right
+                
+            elseif expr.op == ">=" then
+                if debugging then check_compare(left, right) end
+                return left >= right
+            end
             
             error("op: " .. expr.op)
             
@@ -170,7 +296,7 @@ local function create_instance(body, params, initblocks)
             for i, field in ipairs(expr.fields) do
                 -- special case if it's the last one
                 if i == #expr.fields and field.type == "value" then
-                    local values = table.pack(evaluate_expr(field.value))
+                    local values = pack(evaluate_expr(field.value))
                     for j = 1, values.n do
                         ret[k+j-1] = values[j]
                     end
@@ -191,65 +317,39 @@ local function create_instance(body, params, initblocks)
             return ret
             
         elseif expr.type == "function" then
-            return create_function_internal(expr.body, expr.params, blocks)
+            return create_function_internal(expr.body, expr.params, blocks, globals, debugging)
             
         elseif expr.type == "call" then
-            local value = evaluate_expr(expr.value)
+            local func = evaluate_expr(expr.value)
             local args = pack_values(expr.args)
             
-            --[[if _G.debugIndent == nil then
-                _G.debugIndent = 0
+            if debugging and getmetatable(func) == nil then
+                check_type("call", func, {"function"}, expr.value)
             end
-            local indent = string.rep(" ", _G.debugIndent)
-            _G.debugIndent = _G.debugIndent + 2
             
-            print(indent)
-            print(indent, "| -- call --")
-            print(indent, "| value:", value)
-            print(indent, "| expr.value:", dump_expr(expr.value))
-            print(indent, "| args:", dump(args))
-            
-            if value == nil then
-                _G.debugIndent = _G.debugIndent - 2
-                error("attempt to call a nil value (" .. dump_expr(expr.value) .. ")")
-            end]]--
-            
-            -- XX local res = table.pack(value(table.unpack(args)))
-            
-            --_G.debugIndent = _G.debugIndent - 2
-            --print(indent, "| res:", dump(res))
-            --print(indent)
-            
-            -- XX return table.unpack(res)
-            
-            if value == nil then
-                -- debug locals
-                debug_locals()
-                on_error("attempt to call a nil value (" .. dump_expr(expr.value) .. ")")
-            end
-            return value(table.unpack(args))
+            func(unpack(args))
             
         elseif expr.type == "invoke" then
             local value = evaluate_expr(expr.value)
-            if value == nil then
-                on_error("attempt to index a nil value (" .. dump_expr(expr.value) .. ")")
+            
+            if debugging and getmetatable(value) == nil then
+                check_type("index", value, {"table"}, expr.value)
             end
             
             local func = value[expr.name]
-            if func == nil then
-                on_error("attempt to call a nil value (" .. dump_expr(expr.value) .. ":" .. expr.name .. ")")
+            
+            if debugging and getmetatable(func) == nil and type(func) ~= "function" then
+                run_error("attempt to call method '" .. expr.name .. "' (a " .. type(func) .. " value)")
             end
             
             local args = pack_values(expr.args)
-            
-            return func(value, table.unpack(args))
-            
+            func(value, unpack(args))
             
         elseif expr.type == "vararg" then
-            if varargs.value ~= nil then
-                return table.unpack(varargs.value)
+            if varargs ~= nil then
+                return unpack(varargs)
             else
-                on_error("attempt to use varargs in func without varargs")
+                run_error("cannot use '...' outside a vararg function")
             end
             
         else
@@ -258,9 +358,9 @@ local function create_instance(body, params, initblocks)
     end
     
     evaluate_stmt = function(stmt)
-        debug_cur_stmt = stmt
+        debuginfo.stmt = stmt
         
-        local status = 0
+        local code = 0
         local results = nil
         
         if stmt.type == "local_assign" then
@@ -275,18 +375,13 @@ local function create_instance(body, params, initblocks)
             
             for i, target in ipairs(stmt.targets) do
                 if target.type == "name" then
-                    local loc = search_local(target.name)
-                    if loc then
-                        loc.value = tbl[i]
-                    else
-                        _G[target.name] = tbl[i]
-                    end
+                    store_name(target.name, tbl[i])
                     
                 elseif target.type == "index" then
                     local value = evaluate_expr(target.value)
-                    if value == nil then
-                        debug_locals()
-                        on_error("attempt to index a nil value (" .. dump_expr(target.value) .. ")")
+                    
+                    if debugging and getmetatable(value) == nil then
+                        check_type("index", value, {"table"}, target.value)
                     end
                     
                     if target.name ~= nil then
@@ -320,32 +415,38 @@ local function create_instance(body, params, initblocks)
             if body ~= nil then
                 push_block()
                 for _, stmt2 in ipairs(body) do
-                    status, results = evaluate_stmt(stmt2)
-                    if status > 0 then
+                    code, results = evaluate_stmt(stmt2)
+                    if code > 0 then
                         break
                     end
                 end
                 pop_block()
             end
             
-        elseif stmt.type == "while" then
-            local cond = evaluate_expr(stmt.cond)
+        elseif stmt.type == "while" or stmt.type == "repeat" then
+            local cond
+            if stmt.type == "while" then
+                cond = evaluate_expr(stmt.cond)
+            else
+                cond = true
+            end
+            
             local body = stmt.body
             
             while cond do
                 push_block()
                 for _, stmt2 in ipairs(stmt.body) do
-                    status, results = evaluate_stmt(stmt2)
-                    if status > 0 then
+                    code, results = evaluate_stmt(stmt2)
+                    if code > 0 then
                         break
                     end
                 end
                 pop_block()
                 
-                if status == 1 then
+                if code == 1 then
                     break
-                elseif status == 2 then
-                    status = 0
+                elseif code == 2 then
+                    code = 0
                     break
                 end
                 
@@ -355,8 +456,8 @@ local function create_instance(body, params, initblocks)
         elseif stmt.type == "do" then
             push_block()
             for _, stmt2 in ipairs(stmt.body) do
-                status, results = evaluate_stmt(stmt2)
-                if status > 0 then
+                code, results = evaluate_stmt(stmt2)
+                if code > 0 then
                     break
                 end
             end
@@ -366,7 +467,7 @@ local function create_instance(body, params, initblocks)
             evaluate_expr(stmt.expr)
             
         elseif stmt.type == "local_function" then
-            add_local(stmt.name, create_function_internal(stmt.body, stmt.params, blocks))
+            add_local(stmt.name, create_function_internal(stmt.body, stmt.params, blocks, globals, debugging))
             
         elseif stmt.type == "function" then
             local params = {positional = {}, vararg = stmt.params.vararg}
@@ -379,21 +480,22 @@ local function create_instance(body, params, initblocks)
                 table.insert(params.positional, v)
             end
             
-            local func = create_function_internal(stmt.body, params, blocks)
-            local tbl = _G
-            for k,v in pairs(stmt.name) do
-                if k == #stmt.name then
-                    tbl[v] = func
-                else
-                    tbl = tbl[v]
+            local func = create_function_internal(stmt.body, params, blocks, globals, debugging)
+            if #stmt.name == 1 then
+                store_name(stmt.name[1], func)
+                
+            else
+                -- function a.b.c()
+                local tbl = search_name(stmt.name[1])
+                for i = 2, #stmt.name-1 do
+                    tbl = tbl[stmt.name[i]]
                 end
+                tbl[stmt.name[#stmt.name]] = func
             end
             
         elseif stmt.type == "return" then
-            status = 1
+            code = 1
             results = pack_values(stmt.values)
-            
-            --print("returning results: ", dump(results))
             
         elseif stmt.type == "fornum" then
             local start = evaluate_expr(stmt.start)
@@ -403,33 +505,43 @@ local function create_instance(body, params, initblocks)
                 step = evaluate_expr(stmt.step)
             end
             
+            if debugging then
+                if type(start) ~= "number" then
+                    run_error("'for' initial value must be a number")
+                elseif type(stop) ~= "number" then
+                    run_error("'for' limit must be a number")
+                elseif type(step) ~= "number" then
+                    run_error("'for' step must be a number")
+                end
+            end
+            
             for i = start, stop, step do
                 push_block()
                 add_local(stmt.target, i)
                 
                 for _, stmt2 in ipairs(stmt.body) do
-                    status, results = evaluate_stmt(stmt2)
-                    if status > 0 then
+                    code, results = evaluate_stmt(stmt2)
+                    if code > 0 then
                         break
                     end
                 end
                 
                 pop_block()
                 
-                if status == 1 then
+                if code == 1 then
                     break
-                elseif status == 2 then
-                    status = 0
+                elseif code == 2 then
+                    code = 0
                     break
                 end
             end
             
         elseif stmt.type == "forin" then
             local values = pack_values(stmt.values)
-            local v1, v2, v3 = table.unpack(values)
+            local v1, v2, v3 = unpack(values)
             
             while true do
-                local tbl = table.pack(v1(v2, v3))
+                local tbl = pack(v1(v2, v3))
                 v3 = tbl[1]
                 
                 if v3 == nil then
@@ -442,37 +554,35 @@ local function create_instance(body, params, initblocks)
                     add_local(stmt.targets[i], tbl[i])
                 end
                 for _, stmt2 in ipairs(stmt.body) do
-                    status, results = evaluate_stmt(stmt2)
-                    if status > 0 then
+                    code, results = evaluate_stmt(stmt2)
+                    if code > 0 then
                         break
                     end
                 end
                 
                 pop_block()
                 
-                if status == 1 then
+                if code == 1 then
                     break 
-                elseif status == 2 then
-                    status = 0
+                elseif code == 2 then
+                    code = 0
                     break
                 end
             end
             -- for loop needs to be manually called
             
         elseif stmt.type == "break" then
-            status = 2
+            code = 2
             
         else
             error("cannot evaluate statement '" .. stmt.type .. "'")
         end
         
-        return status, results
+        return code, results
     end
     
     local function run_function(...)
-        local tbl = table.pack(...)
-        --print("called function tbl = ", dump(tbl))
-        
+        local tbl = pack(...)        
         push_block()
         
         if params ~= nil then
@@ -481,29 +591,27 @@ local function create_instance(body, params, initblocks)
             end
             
             if params.vararg then
-                varargs.value = {}
-                varargs.value.n = 0
+                varargs = {}
+                varargs.n = 0
                 for i = #params.positional+1, tbl.n do
-                    varargs.value.n = varargs.value.n + 1
-                    varargs.value[varargs.value.n] = tbl[i]
+                    varargs.n = varargs.n + 1
+                    varargs[varargs.n] = tbl[i]
                 end
             end
         end
-        
-        local status, results
         for _, stmt in ipairs(body) do
-            status, results = evaluate_stmt(stmt)
-            --print("done", done)
-            if status == 1 then
+            code, results = evaluate_stmt(stmt)
+            if code == 1 then
                 break
-            elseif status > 1 then
-                error("unexpected status " .. status)
+            elseif code > 1 then
+                error("unexpected code " .. code)
             end
         end
         
         pop_block()
-        if status == 1 then 
-            return table.unpack(results)
+        
+        if code == 1 then 
+            return unpack(results)
         end
     end
     
@@ -511,21 +619,21 @@ local function create_instance(body, params, initblocks)
 end
 
 
-create_function_internal = function(body, params, initblocks)
+create_function_internal = function(body, params, initblocks, globals)
     if initblocks == nil then
         initblocks = { { locals = {} } }
     else
-        initblocks  = {table.unpack(initblocks)}
+        initblocks  = {unpack(initblocks)}
     end
     
     return function(...)
-        local instance = create_instance(body, params, initblocks)
+        local instance = create_instance(body, params, initblocks, globals, true)
         return instance(...)
     end
 end
 
-local function create_function(body)
-    return create_function_internal(body)
+local function create_function(body, globals)
+    return create_function_internal(body, nil, nil, globals)
 end
 
 return create_function
