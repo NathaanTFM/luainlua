@@ -32,12 +32,12 @@ do
     
     require = function(name, ...)
         if loaded[name] ~= nil then
-            return table.unpack(loaded[name])
+            return unpack(loaded[name])
             
         elseif modules[name] ~= nil then
-            loaded[name] = table.pack(modules[name](...))
+            loaded[name] = pack(modules[name](...))
             modules[name] = nil
-            return table.unpack(loaded[name])
+            return unpack(loaded[name])
             
         else
             error("module '" .. name .. "' not found")
