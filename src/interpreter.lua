@@ -36,6 +36,13 @@ local function create_instance(body, params, initblocks, globals, debugging)
         globals = _ENV or _G
     end
     
+    local function has_metatable(elt)
+        -- LuaJ returns getmetatable("string") == nil,
+        -- but we know that the string metatable only contains the __index function
+        -- so we're using this instead
+        return (type(elt) == "table" or type(elt) == "userdata") and getmetatable(elt) ~= nil
+    end
+    
     local function run_error(msg)
         error(debuginfo.stmt._chunk .. ":" .. debuginfo.stmt._row .. ": " .. msg, 0)
     end
@@ -57,7 +64,7 @@ local function create_instance(body, params, initblocks, globals, debugging)
     local function check_arithmetic(left, right, expr_left, expr_right)
         -- if any meta-method is defined, then we can't just check the type
         -- and we cannot trust getmetatable, so we're stuck here
-        if getmetatable(left) ~= nil or getmetatable(right) ~= nil then
+        if has_metatable(left) or has_metatable(right) then
             return
         end 
     
@@ -68,7 +75,7 @@ local function create_instance(body, params, initblocks, globals, debugging)
     local function check_compare(left, right)
         -- if any meta-method is defined, then we can't just check the type
         -- and we cannot trust getmetatable, so we're stuck here
-        if getmetatable(left) ~= nil or getmetatable(right) ~= nil then
+        if has_metatable(left) or has_metatable(right) then
             return
         end 
         
@@ -173,8 +180,8 @@ local function create_instance(body, params, initblocks, globals, debugging)
         if expr.type == "index" then
             local value = evaluate_expr(expr.value)
             
-            if debugging and getmetatable(value) == nil then
-                check_type("index", value, {"table"}, expr.value)
+            if debugging and not has_metatable(value) then
+                check_type("index", value, {"table", "string"}, expr.value)
             end
             
             if expr.name ~= nil then
@@ -191,14 +198,14 @@ local function create_instance(body, params, initblocks, globals, debugging)
             local value = evaluate_expr(expr.value)
             if expr.uop == "-" then
                 -- is there a metatable field for negation?
-                if debugging and getmetatable(value) == nil then
+                if debugging and not has_metatable(value) then
                     check_type("perform arithmetic on", value, {"number"}, expr.value)
                 end
                 
                 return -value
                 
             elseif expr.uop == "#" then
-                if debugging and getmetatable(value) == nil then
+                if debugging and not has_metatable(value) then
                     check_type("get length of", value, {"string", "table"}, expr.value)
                 end
                 
@@ -256,7 +263,7 @@ local function create_instance(body, params, initblocks, globals, debugging)
                 return left / right
                 
             elseif expr.op == ".." then
-                if debugging and getmetatable(left) == nil and getmetatable(right) == nil then
+                if debugging and not has_metatable(left) and not has_metatable(right) then
                     check_type("concatenate", left, {"string", "number"}, expr.left)
                     check_type("concatenate", right, {"string", "number"}, expr.right)
                 end
@@ -323,7 +330,7 @@ local function create_instance(body, params, initblocks, globals, debugging)
             local func = evaluate_expr(expr.value)
             local args = pack_values(expr.args)
             
-            if debugging and getmetatable(func) == nil then
+            if debugging and not has_metatable(func) then
                 check_type("call", func, {"function"}, expr.value)
             end
             
@@ -332,13 +339,13 @@ local function create_instance(body, params, initblocks, globals, debugging)
         elseif expr.type == "invoke" then
             local value = evaluate_expr(expr.value)
             
-            if debugging and getmetatable(value) == nil then
-                check_type("index", value, {"table"}, expr.value)
+            if debugging and not has_metatable(value) then
+                check_type("index", value, {"table", "string"}, expr.value)
             end
             
             local func = value[expr.name]
             
-            if debugging and getmetatable(func) == nil and type(func) ~= "function" then
+            if debugging and not has_metatable(func) and type(func) ~= "function" then
                 run_error("attempt to call method '" .. expr.name .. "' (a " .. type(func) .. " value)")
             end
             
@@ -380,8 +387,8 @@ local function create_instance(body, params, initblocks, globals, debugging)
                 elseif target.type == "index" then
                     local value = evaluate_expr(target.value)
                     
-                    if debugging and getmetatable(value) == nil then
-                        check_type("index", value, {"table"}, target.value)
+                    if debugging and not has_metatable(value) then
+                        check_type("index", value, {"table", "string"}, target.value)
                     end
                     
                     if target.name ~= nil then
@@ -627,7 +634,7 @@ create_function_internal = function(body, params, initblocks, globals)
     end
     
     return function(...)
-        local instance = create_instance(body, params, initblocks, globals, false)
+        local instance = create_instance(body, params, initblocks, globals, not not _G.DEBUG_INTERPRETER)
         return instance(...)
     end
 end
