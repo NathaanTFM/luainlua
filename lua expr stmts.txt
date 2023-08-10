@@ -1,0 +1,56 @@
+name
+string
+number
+boolean
+nil
+
+uop
+    "not", "-", "#"
+op
+    "+", "-", "*", "%", "^", "/", "..", "==", "<", "<=", "~=", ">", ">=", "and", "or"
+
+constant
+    string
+    number
+    boolean
+    nil
+
+body
+    {stmt...}
+    
+params
+    {positional = {name...}, vararg = boolean}
+    
+field
+    {type = "expr", expr = expr, value = expr}
+    {type = "name", name = name, value = expr}
+    {type = "value", value = expr}
+
+expr
+    {type = "table", fields = {field...}}
+    {type = "function", params = params, body = body}
+    {type = "constant", value = constant}
+    {type = "name", name = name}
+    {type = "index", value = expr, name = name}
+    {type = "index", value = expr, expr = expr}
+    {type = "invoke", value = expr, name = name, args = {expr...}}
+    {type = "call", value = expr, args = {expr...}}
+    {type = "vararg"}
+    {type = "unary", uop = uop, value = expr}
+    {type = "binary", left = expr, op = op, right = expr}
+    
+stmt
+    {type = "local_function", name = name, params = params, body = body}
+    {type = "local_assign", targets = {name...}, values = {expr...}}
+    {type = "function", name = name, method = boolean, params = params, body = body}
+    {type = "if", cond = expr, body = body, elseifs = {{cond = expr, body = body}...}, elsebody = body | nil}
+    {type = "while", cond = expr, body = body}
+    {type = "repeat", cond = expr, body = body}
+    {type = "break"}
+    {type = "assign", targets = {name...}, values = {expr...}}
+    {type = "expr", expr = expr}
+    {type = "return", values = {expr...}}
+    {type = "do", body = body}
+    {type = "fornum", target = name, start = expr, stop = expr, step = expr, body = body}
+    {type = "forin", targets = {name...}, values = {expr...}, body = body}
+    
