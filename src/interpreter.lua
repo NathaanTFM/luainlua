@@ -327,7 +327,7 @@ local function create_instance(body, params, initblocks, globals, debugging)
                 check_type("call", func, {"function"}, expr.value)
             end
             
-            func(unpack(args))
+            return func(unpack(args))
             
         elseif expr.type == "invoke" then
             local value = evaluate_expr(expr.value)
@@ -343,7 +343,7 @@ local function create_instance(body, params, initblocks, globals, debugging)
             end
             
             local args = pack_values(expr.args)
-            func(value, unpack(args))
+            return func(value, unpack(args))
             
         elseif expr.type == "vararg" then
             if varargs ~= nil then
