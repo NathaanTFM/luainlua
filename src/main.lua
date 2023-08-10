@@ -6,7 +6,7 @@ env.loadstring = loadstring
 local og_eventChatCommand = eventChatCommand
 
 local function sanitize(str)
-    return str:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;")
+    return tostring(str):gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;")
 end
     
 function eventChatCommand(name, command)
@@ -18,11 +18,11 @@ function eventChatCommand(name, command)
             if status then
                 --ui.addPopup(0x4e415421, 0, "<text align='center'>Eval OK", name, (800 - 300) / 2, 100, 300, true)
             else
-                ui.addPopup(0x4e415421, 0, "<text align='center'>Eval error: " .. sanitize(tostring(ret)), name, 50, 50, nil, true)
+                ui.addPopup(0x4e415421, 0, "<text align='center'>Eval error: " .. sanitize(ret), name, 50, 50, nil, true)
                 print(tostring(ret))
             end
         else
-            ui.addPopup(0x4e415421, 0, "<text align='center'>Parse error: " .. sanitize(tostring(func)), name, 50, 50, nil, true)
+            ui.addPopup(0x4e415421, 0, "<text align='center'>Parse error: " .. sanitize(func), name, 50, 50, nil, true)
             print(tostring(func))
         end
         
