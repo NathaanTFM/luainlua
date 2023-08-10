@@ -458,6 +458,9 @@ local function create_instance(body, params, initblocks, globals, debugging)
                 end
                 
                 cond = evaluate_expr(stmt.cond)
+                if stmt.type == "repeat" then
+                    cond = not cond
+                end
             end
             
         elseif stmt.type == "do" then
