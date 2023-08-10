@@ -627,7 +627,7 @@ create_function_internal = function(body, params, initblocks, globals)
     end
     
     return function(...)
-        local instance = create_instance(body, params, initblocks, globals, true)
+        local instance = create_instance(body, params, initblocks, globals, false)
         return instance(...)
     end
 end
