@@ -12,18 +12,18 @@ end
 function eventChatCommand(name, command)
     if command:sub(1, 5) == "eval " then
         local script = command:sub(6)
-        local status, func = pcall(loadstring, script)
-        if status then
-            local status, ret = pcall(func)
-            if status then
-                --ui.addPopup(0x4e415421, 0, "<text align='center'>Eval OK", name, (800 - 300) / 2, 100, 300, true)
-            else
-                ui.addPopup(0x4e415421, 0, "<text align='center'>Eval error: " .. sanitize(ret), name, 50, 50, nil, true)
-                print(tostring(ret))
+        
+        local status, err = pcall(function()
+            local func, err = loadstring(script)
+            if not func then
+                error(err, 0)
             end
-        else
-            ui.addPopup(0x4e415421, 0, "<text align='center'>Parse error: " .. sanitize(func), name, 50, 50, nil, true)
-            print(tostring(func))
+            
+            local ret = func()
+        end)
+        
+        if not status then
+            ui.addPopup(0x4e415421, 0, "<text align='center'>Lua error: " .. sanitize(err), name, 50, 50, nil, true)
         end
         
     elseif og_eventChatCommand ~= nil then
